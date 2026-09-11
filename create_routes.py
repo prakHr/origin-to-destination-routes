@@ -16,7 +16,7 @@ from reverse_geocoder import (
 
 def sample_coordinates(
     coordinates,
-    max_points=10
+    max_points=int(pow(10,100))
 ):
 
     if not coordinates:
@@ -52,7 +52,7 @@ def sample_coordinates(
 async def get_route_between_origin_and_destination(
     origin_address,
     destination_address,
-    max_address_points=10
+    max_address_points=int(pow(10,100))
 ):
 
     # -----------------------------------------------------
@@ -231,7 +231,7 @@ async def main():
         await get_route_between_origin_and_destination(
             origin_address,
             destination_address,
-            max_address_points=10
+            max_address_points=int(pow(10,100))
         )
     )
     return result
