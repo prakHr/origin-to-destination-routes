@@ -1,60 +1,101 @@
-from geopy.geocoders import Nominatim
+import asyncio
+
 import searoute as sr
+
 from pprint import pprint
-import time
 
-
-# ---------------------------------------------------------
-# Nominatim configuration
-# ---------------------------------------------------------
-
-geolocator = Nominatim(
-    user_agent="create_routes/1.0",
-    timeout=30
+from reverse_geocoder import (
+    get_addresses,
+    get_origin_destination_coordinates
 )
 
 
 # ---------------------------------------------------------
-# Geocode address
+# Sample route coordinates
 # ---------------------------------------------------------
 
-def get_lat_lon_from_address(address):
-    location = geolocator.geocode(address)
+def sample_coordinates(
+    coordinates,
+    max_points=10
+):
 
-    if location is None:
-        raise ValueError(
-            f"Could not geocode address: {address}"
+    if not coordinates:
+        return []
+
+    if len(coordinates) <= max_points:
+        return coordinates
+
+    # Always include first point
+    # and last point.
+
+    indexes = []
+
+    for i in range(max_points):
+
+        index = round(
+            i * (len(coordinates) - 1)
+            / (max_points - 1)
         )
 
-    return {
-        "lat": location.latitude,
-        "lon": location.longitude
-    }
+        indexes.append(index)
+
+    return [
+        coordinates[index]
+        for index in indexes
+    ]
 
 
 # ---------------------------------------------------------
 # Calculate route
 # ---------------------------------------------------------
 
-def get_route_between_origin_and_destination(
+async def get_route_between_origin_and_destination(
     origin_address,
-    destination_address
+    destination_address,
+    max_address_points=10
 ):
-    # Geocode origin
-    origin_lat_lon = get_lat_lon_from_address(
-        origin_address
-    )
 
-    # Small delay between Nominatim requests
-    time.sleep(1.2)
+    # -----------------------------------------------------
+    # Geocode origin and destination
+    # -----------------------------------------------------
 
-    # Geocode destination
-    destination_lat_lon = get_lat_lon_from_address(
+    (
+        origin_lat_lon,
+        destination_lat_lon
+    ) = await get_origin_destination_coordinates(
+        origin_address,
         destination_address
     )
 
-    # IMPORTANT:
-    # searoute expects [longitude, latitude]
+    if origin_lat_lon is None:
+
+        raise ValueError(
+            f"Could not geocode origin: "
+            f"{origin_address}"
+        )
+
+    if destination_lat_lon is None:
+
+        raise ValueError(
+            f"Could not geocode destination: "
+            f"{destination_address}"
+        )
+
+    print()
+    print("Origin coordinates:")
+    print(origin_lat_lon)
+
+    print()
+
+    print("Destination coordinates:")
+    print(destination_lat_lon)
+
+    # -----------------------------------------------------
+    # searoute expects:
+    #
+    # [longitude, latitude]
+    # -----------------------------------------------------
+
     origin = [
         origin_lat_lon["lon"],
         origin_lat_lon["lat"]
@@ -65,18 +106,113 @@ def get_route_between_origin_and_destination(
         destination_lat_lon["lat"]
     ]
 
-    
-    # Origin -> Destination
+    print()
+    print("Calculating sea route...")
+
+    # -----------------------------------------------------
+    # Calculate route
+    # -----------------------------------------------------
+
     route = sr.searoute(
         origin,
         destination
     )
 
-    
+    # -----------------------------------------------------
+    # Get route coordinates
+    #
+    # searoute returns:
+    #
+    # [longitude, latitude]
+    # -----------------------------------------------------
+
+    route_coordinates = (
+        route.geometry.coordinates
+    )
+
+    print()
+    print(
+        f"Total route coordinates: "
+        f"{len(route_coordinates)}"
+    )
+
+    # -----------------------------------------------------
+    # Convert:
+    #
+    # [longitude, latitude]
+    #
+    # to:
+    #
+    # (latitude, longitude)
+    #
+    # because reverse geocoder expects lat/lon.
+    # -----------------------------------------------------
+
+    coordinates = []
+
+    for lon, lat in route_coordinates:
+
+        coordinates.append(
+            (lat, lon)
+        )
+
+    # -----------------------------------------------------
+    # Sample coordinates
+    # -----------------------------------------------------
+
+    sampled_coordinates = sample_coordinates(
+        coordinates,
+        max_points=max_address_points
+    )
+
+    print()
+    print(
+        f"Coordinates selected for "
+        f"reverse geocoding: "
+        f"{len(sampled_coordinates)}"
+    )
+
+    # -----------------------------------------------------
+    # Reverse geocode sampled coordinates
+    # -----------------------------------------------------
+
+    addresses = await get_addresses(
+        sampled_coordinates
+    )
+
+    # -----------------------------------------------------
+    # Combine coordinate + address
+    # -----------------------------------------------------
+
+    route_addresses = []
+
+    for coordinate, address in zip(
+        sampled_coordinates,
+        addresses
+    ):
+
+        lat, lon = coordinate
+
+        route_addresses.append(
+            {
+                "lat": lat,
+                "lon": lon,
+                "address": address
+            }
+        )
+
+    # -----------------------------------------------------
+    # Return result
+    # -----------------------------------------------------
+
     return {
+
         "two_way_distance": {
-            "origin_to_destination": route
-            
+
+            "origin_to_destination": {            
+
+                "addresses": route_addresses
+            }
         }
     }
 
@@ -85,15 +221,26 @@ def get_route_between_origin_and_destination(
 # Main
 # ---------------------------------------------------------
 
+async def main():
+
+    origin_address = "Boston"
+
+    destination_address = "India"
+
+    result = (
+        await get_route_between_origin_and_destination(
+            origin_address,
+            destination_address,
+            max_address_points=10
+        )
+    )
+    return result
+
+
+# ---------------------------------------------------------
+# Run
+# ---------------------------------------------------------
+
 if __name__ == "__main__":
 
-    origin_address = "Taj Mahal, Agra, Uttar Pradesh 282001"
-
-    destination_address = "Bits Hyderabad Pilani"
-    
-    two_way_route = get_route_between_origin_and_destination(
-        origin_address,
-        destination_address
-    )
-
-    pprint(two_way_route)
+    asyncio.run(main())
